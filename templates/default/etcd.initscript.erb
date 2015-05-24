@@ -1,0 +1,51 @@
+#!/sbin/runscript
+#
+# etcd init script for Gentoo ---
+# Managed by Chef. Do not modify!
+# -------------------------------
+#
+
+ETCD_BIN="${ETCD_BIN:-<%= @node['etcd']['bin_path'] %>}"
+ETCD_PID_FILE="${ETCD_PID_FILE:-/var/run/etcd/etcd.pid}"
+ETCD_USER="${ETCD_USER:-<%= @node['etcd']['user'] %>}"
+ETCD_GROUP="${ETCD_GROUP:-<%= @node['etcd']['group'] %>}"
+
+start() {
+  for dir in /var/run/etcd /var/log/etcd <%= @node['etcd']['data_dir'] %>; do
+    mkdir -p $dir
+    chown -R ${ETCD_USER}:${ETCD_GROUP} $dir
+  done
+
+  ebegin "Starting etcd"
+
+  local private_ipv4=$(curl -4s http://169.254.169.254/latest/meta-data/local-ipv4)
+
+  <%- if name = @node['etcd']['name'] %>
+  ETCD_NAME="<%= name %>"
+  <%- else %>
+  ETCD_NAME="$(curl -4s http://169.254.169.254/latest/meta-data/instance-id)"
+  <%- end %>
+  ETCD_LISTEN_PEER_URLS="http://${private_ipv4}:2380,http://${private_ipv4:7001}"
+  ETCD_LISTEN_CLIENT_URLS="http://${private_ipv4}:2379,http://${private_ipv4:4001}"
+  <%- if discovery = @node['etcd']['discovery'] %>
+  ETCD_DISCOVERY="<%= discovery %>"
+  <%- else %>
+  ETCD_DISCOVERY=
+  <%- end %>
+
+  start-stop-daemon --start --quiet \
+    --pidfile ${ETCD_PID_FILE} \
+    --make-pidfile --chuid ${ETCD_USER}:${ETCD_GROUP} \
+    --exec ${ETCD_BIN} -- \
+      --data-dir=<%= @node['etcd']['data_dir'] %> \
+      --name=${ETCD_NAME} \
+      --discovery=${ETCD_DISCOVERY} > /var/log/etcd/etcd.log 2>&1 &
+
+  eend $? "Failed to start etcd"
+}
+
+stop() {
+  ebegin "Stopping etcd"
+  start-stop-daemon --stop --pidfile ${ETCD_PID_FILE}
+  eend $? "Failed to stop etcd"
+}
